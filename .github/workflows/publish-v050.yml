@@ -1,0 +1,51 @@
+name: Publish 0.5.0 updater release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-v050.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download validated 0.5.0 artifact
+        shell: pwsh
+        run: |
+          $url = 'https://sdmntprnortheu.oaiusercontent.com/files/00000000-9ad0-81f4-b948-e8ff3fed20d7/raw?se=2026-10-05T14%3A31%3A43Z&sp=r&sv=2026-02-06&sr=b&scid=0e631571-7c24-5b9c-abb8-d48f9cf37cb7&skoid=1d6acb5b-b3f4-43ec-a5ec-b05c4a7708c8&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-05T07%3A26%3A48Z&ske=2026-10-06T07%3A26%3A48Z&sks=b&skv=2026-02-06&sig=vuoIjHJrGasSsmURfvV%2BxJoT6plzb98ftglwC/FuUAU%3D'
+          Invoke-WebRequest -Uri $url -OutFile artifact.zip
+          Expand-Archive -Path artifact.zip -DestinationPath artifact
+          $msi = Get-ChildItem artifact -Recurse -Filter 'SMC-Wireless-Studio-0.5.0-x64.msi' | Select-Object -First 1
+          $sha = Get-ChildItem artifact -Recurse -Filter 'SMC-Wireless-Studio-0.5.0-x64.msi.sha256' | Select-Object -First 1
+          if (-not $msi -or -not $sha) { throw '0.5.0 MSI or SHA256 file missing from validated artifact.' }
+          Copy-Item $msi.FullName ./SMC-Wireless-Studio-0.5.0-x64.msi
+          Copy-Item $sha.FullName ./SMC-Wireless-Studio-0.5.0-x64.msi.sha256
+          $expected = ((Get-Content ./SMC-Wireless-Studio-0.5.0-x64.msi.sha256 -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash ./SMC-Wireless-Studio-0.5.0-x64.msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "SHA256 mismatch: expected $expected actual $actual" }
+      - name: Publish latest stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.5.0 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v0.5.0 ./SMC-Wireless-Studio-0.5.0-x64.msi ./SMC-Wireless-Studio-0.5.0-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --clobber
+            gh release edit v0.5.0 --repo $env:GITHUB_REPOSITORY --prerelease=false --latest
+            exit 0
+          }
+          gh release create v0.5.0 ./SMC-Wireless-Studio-0.5.0-x64.msi ./SMC-Wireless-Studio-0.5.0-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --target main --title 'SMC Wireless Studio 0.5.0' --notes @"
+          ## SMC Wireless Studio 0.5.0
+
+          - Engineering UI overhaul: világosabb, kontrasztosabb chrome felület
+          - Rendezettebb spacing, kártyák, gombok és tipográfia
+          - Topológia zoom 55–140% között, Ctrl+görgővel és gombokkal
+          - A zoom projektenként automatikusan megmarad
+          - Nagyobb master node, nincs szöveglevágás
+          - Rendezettebb Remote eszközablak és analóg csatornakártyák
+          "@ --latest
