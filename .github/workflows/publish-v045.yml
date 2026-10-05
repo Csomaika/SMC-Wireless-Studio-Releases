@@ -1,4 +1,5 @@
 name: Publish 0.4.5 updater release
+# validated bridge publish
 
 on:
   push:
