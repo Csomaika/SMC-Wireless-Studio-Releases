@@ -1,0 +1,50 @@
+name: Publish 0.4.9 updater release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-v049.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download validated 0.4.9 artifact
+        shell: pwsh
+        run: |
+          $url = 'https://sdmntprnortheu.oaiusercontent.com/files/00000000-5734-81f4-a449-3b4df8038972/raw?se=2026-10-05T13%3A12%3A49Z&sp=r&sv=2026-02-06&sr=b&scid=0e13be5c-c51d-53a3-8617-c6852cdd183d&skoid=1d6acb5b-b3f4-43ec-a5ec-b05c4a7708c8&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-05T06%3A50%3A20Z&ske=2026-10-06T06%3A50%3A20Z&sks=b&skv=2026-02-06&sig=ENqAxzW8wGbXf8VXu5TD10mJkk5b3OmqzXZd1Dvab4A%3D'
+          Invoke-WebRequest -Uri $url -OutFile artifact.zip
+          Expand-Archive -Path artifact.zip -DestinationPath artifact
+          $msi = Get-ChildItem artifact -Recurse -Filter 'SMC-Wireless-Studio-0.4.9-x64.msi' | Select-Object -First 1
+          $sha = Get-ChildItem artifact -Recurse -Filter 'SMC-Wireless-Studio-0.4.9-x64.msi.sha256' | Select-Object -First 1
+          if (-not $msi -or -not $sha) { throw '0.4.9 MSI or SHA256 file missing from validated artifact.' }
+          Copy-Item $msi.FullName ./SMC-Wireless-Studio-0.4.9-x64.msi
+          Copy-Item $sha.FullName ./SMC-Wireless-Studio-0.4.9-x64.msi.sha256
+          $expected = ((Get-Content ./SMC-Wireless-Studio-0.4.9-x64.msi.sha256 -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash ./SMC-Wireless-Studio-0.4.9-x64.msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "SHA256 mismatch: expected $expected actual $actual" }
+      - name: Publish latest stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.4.9 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v0.4.9 ./SMC-Wireless-Studio-0.4.9-x64.msi ./SMC-Wireless-Studio-0.4.9-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --clobber
+            gh release edit v0.4.9 --repo $env:GITHUB_REPOSITORY --prerelease=false --latest
+            exit 0
+          }
+          gh release create v0.4.9 ./SMC-Wireless-Studio-0.4.9-x64.msi ./SMC-Wireless-Studio-0.4.9-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --target main --title 'SMC Wireless Studio 0.4.9' --notes @"
+          ## SMC Wireless Studio 0.4.9
+
+          - Klasszikus, háromsávos Wi-Fi packet + középső pont, átlátszó háttérrel
+          - A jel a remote irányába fordul és folyamatosan követi annak pozícióját
+          - Drag közben sem áll le az animáció
+          - A packet mozgása a WPF CompositionTarget render ciklusát használja
+          - Bitmap cache-elt remote node-ok a simább húzásért
+          "@ --latest
