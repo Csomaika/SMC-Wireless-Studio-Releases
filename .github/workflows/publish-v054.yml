@@ -1,0 +1,48 @@
+name: Publish 0.5.4 updater release
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-v054.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download validated 0.5.4 MSI
+        shell: pwsh
+        run: |
+          $msiUrl = 'https://release-assets.githubusercontent.com/github-production-release-asset/1373581388/1715a492-80aa-4c7a-9ee0-f3a44a4e8407?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-10-06T12%3A53%3A34Z&rscd=attachment%3B+filename%3DSMC-Wireless-Studio-0.5.4-x64.msi&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-10-06T11%3A52%3A58Z&ske=2026-10-06T12%3A53%3A34Z&sks=b&skv=2018-11-09&sig=MI27MK8dhGdz8xgEAevCCw1ZSQkYgW%2Fwn46EnwLx6rM%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc5MTI4OTgzOSwibmJmIjoxNzkxMjg4MDM5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.lvv2UxB5368-8YhvJke9-ItlyBjjVye-t7EJLWdXZog&response-content-disposition=attachment%3B%20filename%3DSMC-Wireless-Studio-0.5.4-x64.msi&response-content-type=application%2Foctet-stream'
+          $shaUrl = 'https://release-assets.githubusercontent.com/github-production-release-asset/1373581388/9e9ec628-767e-4976-b7f4-06677533450e?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-10-06T12%3A47%3A54Z&rscd=attachment%3B+filename%3DSMC-Wireless-Studio-0.5.4-x64.msi.sha256&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-10-06T11%3A47%3A52Z&ske=2026-10-06T12%3A47%3A54Z&sks=b&skv=2018-11-09&sig=nUAEdgHtEslf5JKgtE%2Bv%2Byt2XYC3%2FLT%2BZw8jjdTNf9o%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc5MTI4ODMzOSwibmJmIjoxNzkxMjg4MDM5LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.m8B8L9fVHTvS2z9kHEyX_GuI4MYqMJYzB2xNq-tuvHA&response-content-disposition=attachment%3B%20filename%3DSMC-Wireless-Studio-0.5.4-x64.msi.sha256&response-content-type=application%2Foctet-stream'
+          Invoke-WebRequest -Uri $msiUrl -OutFile ./SMC-Wireless-Studio-0.5.4-x64.msi
+          Invoke-WebRequest -Uri $shaUrl -OutFile ./SMC-Wireless-Studio-0.5.4-x64.msi.sha256
+          $expected = ((Get-Content ./SMC-Wireless-Studio-0.5.4-x64.msi.sha256 -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash ./SMC-Wireless-Studio-0.5.4-x64.msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "SHA256 mismatch: expected $expected actual $actual" }
+          if ($actual -ne '818833c5e97986d76ef5f238793a0f04c2cb4e3fc78c3a580fcbc47fe3a8f62a') { throw "Unexpected validated MSI digest: $actual" }
+      - name: Publish latest stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.5.4 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v0.5.4 ./SMC-Wireless-Studio-0.5.4-x64.msi ./SMC-Wireless-Studio-0.5.4-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --clobber
+            gh release edit v0.5.4 --repo $env:GITHUB_REPOSITORY --prerelease=false --latest
+            exit 0
+          }
+          gh release create v0.5.4 ./SMC-Wireless-Studio-0.5.4-x64.msi ./SMC-Wireless-Studio-0.5.4-x64.msi.sha256 --repo $env:GITHUB_REPOSITORY --target main --title 'SMC Wireless Studio 0.5.4' --notes @"
+          ## SMC Wireless Studio 0.5.4
+
+          - EXW1 /main.html elsődleges RSSI lekérdezés
+          - Cookie/session megtartás és biztonságos read-only Wireless/Log oldal-felderítés
+          - RSSI + elérhető webes diagnosztika összefésülése remote-onként
+          - WCh 002 -32.92 dBm regressziós teszt
+          - SMC engineering ajánlás jelölése a trendben: -70 dBm vagy magasabb
+          - Undocumented belső objektumokra továbbra sem küld kísérleti parancsot
+          "@ --latest
